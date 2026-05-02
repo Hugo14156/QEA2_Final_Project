@@ -1,9 +1,6 @@
 import pygame
-import tkinter as tk
 
 from app.control import Controller
-
-# from app.model.model import Model
 from app.view.view import View
 
 
@@ -14,8 +11,7 @@ class App:
         self.view = View(self.controller)
 
     def run_app(self):
-        init_function = getattr(pygame, "init")
-        init_function()
+        pygame.init()
         clock = pygame.time.Clock()
         running = True
         screen = pygame.display.set_mode(self.get_display_resolution())
@@ -91,7 +87,7 @@ class App:
         while running:
             events = pygame.event.get()
             for event in events:
-                if event.type == 256:
+                if event.type == pygame.QUIT:
                     running = False
                     break
 
@@ -104,10 +100,8 @@ class App:
 
             clock.tick(60)  # limits FPS to 60
 
-        quit_function = getattr(pygame, "quit")
-        quit_function()
+        pygame.quit()
 
     def get_display_resolution(self):
-        root = tk.Tk()
-        root.withdraw()
-        return (root.winfo_screenwidth(), root.winfo_screenheight())
+        info = pygame.display.Info()
+        return (info.current_w, info.current_h)

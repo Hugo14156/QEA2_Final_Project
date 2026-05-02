@@ -1,6 +1,3 @@
-import pygame
-
-pygame.init()
 from app.app import App
 
 if __name__ == "__main__":
