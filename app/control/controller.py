@@ -4,6 +4,9 @@ import math
 
 import pygame
 
+from app.model import app_model
+from file_types.file_types import ConvertedPoints
+
 MOUSEMOTION = 1024
 MOUSEBUTTONDOWN = 1025
 MOUSEBUTTONUP = 1026
@@ -32,7 +35,16 @@ class Controller:
         self.points_path = os.path.join("saved_series", "drawing_points.json")
         self.convert_path = os.path.join("saved_series", "converted_points.json")
         self.drawn_points = []
+        self.coeffs = []
         self.convert_requested = False
+        self.animation_active = False
+        self.animation_paused = False
+        self.animation_t = 0.0
+        self.animation_speed_control = 25
+        self.animation_speed = 0.0025
+        self.animation_trace = []
+        self.animation_base_surface = None
+        self.quit_requested = False
 
     def set_canvas(self, canvas, toolbar_height):
         self.canvas = canvas
@@ -52,6 +64,9 @@ class Controller:
             self.point_resolution = slider.value
         elif slider.action == "wave_count":
             self.wave_count = slider.value
+        elif slider.action == "animation_speed":
+            self.animation_speed_control = slider.value
+            self.animation_speed = max(0.0001, slider.value / 10000.0)
 
     def _point_in_canvas(self, point):
         if self.canvas is None:
@@ -206,6 +221,15 @@ class Controller:
                 "Eraser On" if not self.eraser_active else "Eraser Off"
             )
 
+        animation_button = self.buttons_by_action.get("toggle_animation")
+        if animation_button is not None:
+            if not self.animation_active:
+                animation_button.set_text("Play Anim")
+            elif self.animation_paused:
+                animation_button.set_text("Resume Anim")
+            else:
+                animation_button.set_text("Pause Anim")
+
     def refresh_button_labels(self):
         self._sync_button_labels()
 
@@ -228,6 +252,35 @@ class Controller:
         self.last_pos = None
         self.line_start = None
         self.drawn_points = []
+        self.animation_base_surface = None
+        self.stop_animation()
+
+    def stop_animation(self):
+        self.animation_active = False
+        self.animation_paused = False
+        self.animation_t = 0.0
+        self.animation_trace = []
+        self._sync_button_labels()
+
+    def toggle_animation_pause(self):
+        if not self.coeffs:
+            return
+
+        if not self.animation_active:
+            self.animation_active = True
+            self.animation_paused = False
+        else:
+            self.animation_paused = not self.animation_paused
+
+        self._sync_button_labels()
+
+    def advance_animation_time(self):
+        if not self.animation_active or self.animation_paused:
+            return False
+
+        previous_t = self.animation_t
+        self.animation_t = (self.animation_t + self.animation_speed) % 1.0
+        return self.animation_t < previous_t
 
     def save_drawing(self):
         if self.canvas is None:
@@ -248,6 +301,9 @@ class Controller:
     def load_drawing(self):
         if self.canvas is None or not os.path.exists(self.save_path):
             return
+
+        self.stop_animation()
+        self.animation_base_surface = None
 
         loaded_image = pygame.image.load(self.save_path)
         if loaded_image.get_size() != self.canvas.get_size():
@@ -280,6 +336,38 @@ class Controller:
             },
         )
 
+        self.coeffs = app_model.compute_fourier_coefficients(sampled_points)
+        if self.canvas is not None:
+            self.animation_base_surface = self.canvas.copy()
+        else:
+            self.animation_base_surface = None
+        self.animation_t = 0.0
+        self.animation_trace = []
+        self.animation_active = bool(self.coeffs)
+        self.animation_paused = False
+        self._sync_button_labels()
+
+    def calculate_coeffs(self):
+        if not os.path.exists(self.convert_path):
+            self.coeffs = []
+            self.animation_active = False
+            self.animation_paused = False
+            self.animation_base_surface = None
+            return
+
+        converted_points = ConvertedPoints.load_from_file(self.convert_path)
+        points = converted_points.points
+        self.coeffs = app_model.compute_fourier_coefficients(points)
+        if self.canvas is not None:
+            self.animation_base_surface = self.canvas.copy()
+        else:
+            self.animation_base_surface = None
+        self.animation_t = 0.0
+        self.animation_trace = []
+        self.animation_active = bool(self.coeffs)
+        self.animation_paused = False
+        self._sync_button_labels()
+
     def handle_button_action(self, action):
         if action == "save":
             self.save_drawing()
@@ -292,6 +380,12 @@ class Controller:
         elif action == "eraser":
             self.toggle_eraser()
         elif action == "convert":
+            self.convert_mode()
+        elif action == "toggle_animation":
+            self.toggle_animation_pause()
+        elif action == "quit":
+            self.quit_requested = True
+        elif action == "animate_series":
             self.convert_mode()
 
     def handle_slider_action(self, slider):
@@ -317,6 +411,9 @@ class Controller:
             if event.type == MOUSEBUTTONDOWN and event.button == 1:
                 if not self._point_in_canvas(event.pos):
                     continue
+
+                self.stop_animation()
+                self.animation_base_surface = None
 
                 if self.current_mode == "freehand":
                     self.drawing = True

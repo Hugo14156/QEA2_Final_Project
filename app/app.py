@@ -9,6 +9,7 @@ class App:
     def __init__(self):
         self.controller = Controller()
         self.view = View(self.controller)
+        self.fourier_coefficients = ()
 
     def run_app(self):
         pygame.init()
@@ -65,6 +66,22 @@ class App:
             (255, 255, 255),
             action="convert",
         )
+        self.view.add_button(
+            (680, 30, 130, 42),
+            "Play Anim",
+            (90, 110, 160),
+            (120, 145, 210),
+            (255, 255, 255),
+            action="toggle_animation",
+        )
+        self.view.add_button(
+            (820, 30, 90, 42),
+            "Quit",
+            (150, 70, 70),
+            (180, 90, 90),
+            (255, 255, 255),
+            action="quit",
+        )
         self.controller.refresh_button_labels()
         self.view.add_slider(
             (20, 125, 320, 24),
@@ -78,9 +95,17 @@ class App:
             (380, 125, 320, 24),
             "Wave Count",
             10,
-            500,
+            5000,
             100,
             action="wave_count",
+        )
+        self.view.add_slider(
+            (740, 125, 260, 24),
+            "Anim Speed",
+            5,
+            200,
+            self.controller.animation_speed_control,
+            action="animation_speed",
         )
         self.controller.refresh_slider_values()
 
@@ -92,6 +117,31 @@ class App:
                     break
 
             self.controller.handle_events(events)
+
+            if self.controller.quit_requested:
+                running = False
+                continue
+
+            if self.controller.animation_active:
+                if self.controller.animation_base_surface is not None:
+                    self.view.get_canvas().blit(
+                        self.controller.animation_base_surface, (0, 0)
+                    )
+                else:
+                    self.view.clear_canvas()
+                endpoint = self.view.animate_coeffs(
+                    self.controller.coeffs,
+                    min(self.controller.wave_count, len(self.controller.coeffs)),
+                    self.controller.animation_t,
+                )
+
+                if endpoint is not None and not self.controller.animation_paused:
+                    self.controller.animation_trace.append(endpoint)
+
+                self.view.draw_trace(self.controller.animation_trace)
+
+                if self.controller.advance_animation_time():
+                    self.controller.animation_trace = []
 
             self.view.draw()
 
